@@ -47,6 +47,18 @@ test('testHasNamedProperty', (t) => {
   t.false(bindings.testHasNamedProperty(obj, 'c'))
 })
 
+test('testCreateNamedMethodFromClosure', (t) => {
+  for (let i = 0; i < 100; i++) {
+    const obj = {}
+    const key = 'foo'
+    bindings.testCreateNamedMethodFromClosure(obj, key)
+    t.is(
+      obj[key](...Array.from({ length: i }, (_, i) => i)),
+      `arguments length: ${i}`,
+    )
+  }
+})
+
 test('testHasOwnProperty', (t) => {
   const obj = {
     a: '1',

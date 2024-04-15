@@ -36,6 +36,21 @@ fn test_has_named_property(ctx: CallContext) -> Result<JsBoolean> {
 }
 
 #[js_function(2)]
+fn test_create_named_method_from_closure(ctx: CallContext) -> Result<JsUndefined> {
+  let mut obj = ctx.get::<JsObject>(0)?;
+  let key = ctx.get::<JsString>(1)?;
+  obj.create_named_method_from_closure(key.into_utf8()?.as_str()?, move |ctx| {
+    if ctx.length() != 0 {
+      let args = ctx.arguments::<u32>()?;
+      let max = args.last().unwrap();
+      assert_eq!(*max, ctx.length() as u32 - 1);
+    }
+    Ok(format!("arguments length: {}", ctx.length()))
+  })?;
+  ctx.env.get_undefined()
+}
+
+#[js_function(2)]
 fn test_has_own_property(ctx: CallContext) -> Result<JsBoolean> {
   let obj = ctx.get::<JsObject>(0)?;
   let key = ctx.get::<JsString>(1)?;
@@ -170,6 +185,10 @@ pub fn register_js(exports: &mut JsObject) -> Result<()> {
   exports.create_named_method("testSetNamedProperty", test_set_named_property)?;
   exports.create_named_method("testGetNamedProperty", test_get_named_property)?;
   exports.create_named_method("testHasNamedProperty", test_has_named_property)?;
+  exports.create_named_method(
+    "testCreateNamedMethodFromClosure",
+    test_create_named_method_from_closure,
+  )?;
 
   exports.create_named_method("testHasOwnProperty", test_has_own_property)?;
   exports.create_named_method("testHasOwnPropertyJs", test_has_own_property_js)?;

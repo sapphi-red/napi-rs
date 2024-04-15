@@ -7,8 +7,8 @@ use std::ffi::CString;
 use std::ptr;
 
 use crate::{
-  bindgen_runtime::{FromNapiValue, ToNapiValue, TypeName, ValidateNapiValue},
-  check_status, sys, type_of, Callback, Error, Result, Status, ValueType,
+  bindgen_runtime::{FromNapiValue, FunctionCallContext, ToNapiValue, TypeName, ValidateNapiValue},
+  check_status, create_closure_raw_value, sys, type_of, Callback, Error, Result, Status, ValueType,
 };
 
 #[cfg(feature = "serde-json")]
@@ -344,6 +344,28 @@ macro_rules! impl_object_methods {
             sys::napi_set_named_property(self.0.env, self.0.value, name.as_ptr(), js_function)
           },
           "create_named_method error"
+        )
+      }
+
+      #[cfg(feature = "napi5")]
+      pub fn create_named_method_from_closure<R, F>(
+        &mut self,
+        name: &str,
+        callback: F,
+      ) -> Result<()>
+      where
+        R: ToNapiValue,
+        F: 'static + Fn(FunctionCallContext) -> Result<R>,
+      {
+        let len = name.len();
+        let name = CString::new(name)?;
+        let js_function = create_closure_raw_value(self.0.env, name.as_ptr(), len, callback)?;
+
+        check_status!(
+          unsafe {
+            sys::napi_set_named_property(self.0.env, self.0.value, name.as_ptr(), js_function)
+          },
+          "create_named_method_from_closure error"
         )
       }
 

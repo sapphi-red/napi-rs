@@ -614,40 +614,8 @@ impl Env {
     Return: ToNapiValue,
     F: 'static + Fn(FunctionCallContext) -> Result<Return>,
   {
-    let closure_data_ptr = Box::into_raw(Box::new(callback));
-
-    let mut raw_result = ptr::null_mut();
     let len = name.len();
-    check_status!(unsafe {
-      sys::napi_create_function(
-        self.0,
-        name.as_ptr().cast(),
-        len,
-        Some(trampoline::<Return, F>),
-        closure_data_ptr.cast(), // We let it borrow the data here
-        &mut raw_result,
-      )
-    })?;
-
-    // Note: based on N-API docs, at this point, we have created an effective
-    // `&'static dyn Fn…` in Rust parlance, in that thanks to `Box::into_raw()`
-    // we are sure the context won't be freed, and thus the callback may use
-    // it to call the actual method thanks to the trampoline…
-    // But we thus have a data leak: there is nothing yet responsible for
-    // running the `drop(Box::from_raw(…))` cleanup code.
-    //
-    // To solve that, according to the docs, we need to attach a finalizer:
-    check_status!(unsafe {
-      sys::napi_add_finalizer(
-        self.0,
-        raw_result,
-        closure_data_ptr.cast(),
-        Some(finalize_box_trampoline::<F>),
-        ptr::null_mut(),
-        ptr::null_mut(),
-      )
-    })?;
-
+    let raw_result = create_closure_raw_value(self.0, name.as_ptr().cast(), len, callback)?;
     unsafe { Function::from_napi_value(self.0, raw_result) }
   }
 
@@ -1385,6 +1353,53 @@ impl Env {
   pub fn raw(&self) -> sys::napi_env {
     self.0
   }
+}
+
+#[cfg(feature = "napi5")]
+pub(crate) fn create_closure_raw_value<Return, F>(
+  env: sys::napi_env,
+  utf8name: *const c_char,
+  length: usize,
+  callback: F,
+) -> Result<sys::napi_value>
+where
+  Return: ToNapiValue,
+  F: 'static + Fn(FunctionCallContext) -> Result<Return>,
+{
+  let closure_data_ptr = Box::into_raw(Box::new(callback));
+
+  let mut raw_result = ptr::null_mut();
+  check_status!(unsafe {
+    sys::napi_create_function(
+      env,
+      utf8name,
+      length,
+      Some(trampoline::<Return, F>),
+      closure_data_ptr.cast(), // We let it borrow the data here
+      &mut raw_result,
+    )
+  })?;
+
+  // Note: based on N-API docs, at this point, we have created an effective
+  // `&'static dyn Fn…` in Rust parlance, in that thanks to `Box::into_raw()`
+  // we are sure the context won't be freed, and thus the callback may use
+  // it to call the actual method thanks to the trampoline…
+  // But we thus have a data leak: there is nothing yet responsible for
+  // running the `drop(Box::from_raw(…))` cleanup code.
+  //
+  // To solve that, according to the docs, we need to attach a finalizer:
+  check_status!(unsafe {
+    sys::napi_add_finalizer(
+      env,
+      raw_result,
+      closure_data_ptr.cast(),
+      Some(finalize_box_trampoline::<F>),
+      ptr::null_mut(),
+      ptr::null_mut(),
+    )
+  })?;
+
+  Ok(raw_result)
 }
 
 /// This function could be used for `create_buffer_with_borrowed_data` and want do noting when Buffer finalized.
